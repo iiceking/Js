@@ -1,203 +1,306 @@
-const prompt = require("prompt-sync")({ sigint: true });
-const checkword = require("check-if-word")("en");
+const readlineSync = require('readline-sync');
+const fs = require('fs');
+const logFile = 'log.txt';
 
-const letter_dict = {
-  A: 14,
-  B: 4,
-  C: 7,
-  D: 5,
-  E: 19,
-  F: 2,
-  G: 4,
-  H: 2,
-  I: 11,
-  J: 1,
-  K: 1,
-  L: 6,
-  M: 5,
-  N: 9,
-  O: 8,
-  P: 4,
-  Q: 1,
-  R: 10,
-  S: 7,
-  T: 9,
-  U: 8,
-  V: 2,
-  W: 1,
-  X: 1,
-  Y: 1,
-  Z: 2,
+let letterValues = {
+  'A': 14, 'B': 4, 'C': 7, 'D': 5, 'E': 19, 'F': 2, 'G': 4, 'H': 2, 'I': 11,
+  'J': 1, 'K': 1, 'L': 6, 'M': 5, 'N': 9, 'O': 8, 'P': 4, 'Q': 1, 'R': 10,
+  'S': 7, 'T': 9, 'U': 8, 'V': 2, 'W': 1, 'X': 1, 'Y': 1, 'Z': 2
 };
 
-let players = [0, 1];
-let game_playing = true;
-let first_turn_played = false;
-let i = 1;
+// Player class definition
+function Player(name) {
+  this.name = name;
+  this.hand = [];
+  this.board = [];
+  this.firstTurn = true;
+  this.firstAction = false;
+}
 
-const player_letters = [[], []];
-const player_grid = [[], []];
+// Coin toss function (returns "player1" or "player2")
+function tossCoin() {
+  return Math.random() < 0.5 ? "Joueur 1" : "Joueur 2";
+}
 
-function pick6Letters() {
-  const letter_list = [];
+// Function to add a word to the player's game board
+function appendWord(player) {
+  let userInput;
+  do {
+    userInput = readlineSync.question('Entrez un mot : ');
+    userInput = userInput.toUpperCase();
+  } while (!isWordValid(userInput, player.hand));
+  recordLog(player, "a joué le mot " + userInput);
+  player.board.push(userInput);
+  removeLetter(player, userInput);
+  drawSingleLetter(player);
+  displayLetters(player);
+}
+
+// Function to display the player's game board
+function showBoard(player) {
+  console.log("Board du " + player.name + " :");
+  for (let i = 0; i < player.board.length; i++) {
+    console.log("Ligne " + parseInt(i + 1) + " : " + player.board[i]);
+  }
+}
+
+// Function to draw 6 random letters and add them to the player's hand
+function drawSixRandomLetters(player) {
   for (let i = 0; i < 6; i++) {
-    const rdm = pickLetter();
-    letter_list.push(rdm);
+    drawSingleLetter(player);
   }
-  return letter_list;
 }
 
-function userInput(player) {
-  console.clear();
-  console.log(`It's player ${player + 1}'s turn`);
-  console.log("\nHere is your grid: ", player_grid[player]);
-  console.log("\nYou have ", player_letters[player].length, " letters: ", player_letters[player]);
-  console.log("\nWhat do you want to do ? (select a number)\n 1 - write a new word \n 2 - turn a word into a new one \n 3 - pass");
-  const choice = prompt();
+// Function to draw a random letter and add it to the player's hand
+function drawSingleLetter(player) {
+  let availableLetters = Object.keys(letterValues);
+  let letter;
+  do {
+    const randomIndex = Math.floor(Math.random() * availableLetters.length);
+    letter = availableLetters[randomIndex];
+  } while (letterValues[letter] === 0);
+  player.hand.push(letter);
+  letterValues[letter]--;
+}
 
-  if (["1", "2", "3"].includes(choice)) {
-    return choice;
+// Function to display the player's current hand of letters
+function displayLetters(player) {
+  let letters = player.hand.join(' ');
+  console.log("Lettres : " + letters);
+}
+
+// Function to check if the word is valid
+function isWordValid(word, playerHand) {
+  if (word.length < 3) return false;
+  for (let i = 0; i < word.length; i++) {
+    if (!playerHand.includes(word[i])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// Function to append a line to the log file, creates the file if it doesn't exist
+function recordLog(player, line) {
+  fs.appendFileSync(logFile, player.name + " " + line + '\n', (err) => {
+    if (err) {
+      console.error("Error writing to the log file:", err);
+    }
+  });
+}
+
+// Function to clear the log file
+function resetLogFile(callback) {
+  fs.writeFile(logFile, '', (err) => {
+    if (err) {
+      console.error("Error clearing the log file:", err);
+      return;
+    }
+    callback();
+  });
+}
+
+// Function to remove letters from the player's hand
+function removeLetter(player, word) {
+  for (const char of word) {
+    const index = player.hand.indexOf(char);
+    if (index !== -1) {
+      player.hand.splice(index, 1);
+    }
+  }
+}
+
+// Function to check if the transformation of the word is valid
+function isWordTransformValid(oldWord, newWord, playerHand) {
+  if (newWord.length < 3) return false;
+  const oldWordLetters = oldWord.split('');
+  const newWordLetters = newWord.split('');
+
+  if (oldWord.length === newWord.length) return false;
+  for (let i = 0; i < newWordLetters.length; i++) {
+    if (!(playerHand.includes(newWordLetters[i]) || oldWordLetters.includes(newWordLetters[i]))) {
+      return false;
+    }
+  }
+  for (let i = 0; i < oldWordLetters.length; i++) {
+    if (!newWordLetters.includes(oldWordLetters[i])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// Function to transform a word on the player's game board
+function modifyWord(player, isJarnac = false, otherPlayer = null) {
+  let index;
+  do {
+    showBoard(player);
+    displayLetters(player);
+    index = readlineSync.question('Entrez la ligne du mot a transformer : ');
+    index = parseInt(index) - 1;
+    oldWord = player.board[index];
+  } while (index < 0 || index >= player.board.length || oldWord === undefined);
+
+  console.log('Vous avez choisi de transformer le mot : ' + oldWord);
+  if (!isJarnac) {
+    recordLog(player, "a choisi de transformer le mot " + oldWord)
   } else {
-    console.log("\nInvalid input. Try again.\n");
-    return userInput(player);
+    recordLog(otherPlayer, "a choisi de transformer le mot " + oldWord + " de " + player.name)
   }
-}
 
-function inputCheck(user_input, player) {
-  user_input = user_input.toUpperCase();
-  const split_word = user_input.split('');
-  let res_string = "";
-  const tmp_player = [...player_letters[player]];
+  let newWord;
+  do {
+    displayLetters(player);
+    newWord = readlineSync.question('Entrez le nouveau mot : ');
+    newWord = newWord.toUpperCase();
+  } while (!isWordTransformValid(oldWord, newWord, player.hand));
+  if (!isJarnac) {
+    recordLog(player, "a transformé le mot " + oldWord + " en " + newWord)
+    player.board[index] = newWord;
+  } else {
+    recordLog(otherPlayer, "a transformé le mot " + oldWord + " en " + newWord + " de " + player.name)
+    otherPlayer.board.push(newWord);
+    player.board.splice(index, 1);
+  }
 
-  if (split_word.length >= 3) {
-    for (const letter of split_word) {
-      if (!tmp_player.includes(letter)) {
-        console.log("Invalid Entry. Please only use letters you have.\n");
-        return false;
+  for (const char of newWord) {
+    const countInNewWord = newWord.split(char).length - 1;
+    const countInOldWord = oldWord.split(char).length - 1;
+    if (countInNewWord > countInOldWord) {
+      const excessCount = countInNewWord - countInOldWord;
+      for (let i = 0; i < excessCount; i++) {
+        const index = player.hand.indexOf(char);
+        if (index !== -1) {
+          player.hand.splice(index, 1);
+        }
       }
-      const index = tmp_player.indexOf(letter);
-      tmp_player.splice(index, 1);
     }
-
-    if (checkword(user_input.toLowerCase())) {
-      return true;
-    } else {
-      res_string += "Word does not exist...\n";
-    }
+  }
+  if (!isJarnac) {
+    drawSingleLetter(player);
+    return 1;
   } else {
-    res_string += "Word not long enough, make sure the word is at least 3 letters long.\n";
+    return 2;
   }
-  console.log(res_string);
-  return false;
 }
 
-function pickLetter() {
-  const keys_array = Object.keys(letter_dict);
-  const rdm_index = Math.floor(Math.random() * keys_array.length);
-  const rdm_letter = keys_array[rdm_index];
-
-  if (letter_dict[rdm_letter] === 1) {
-    delete letter_dict[rdm_letter];
-  } else {
-    letter_dict[rdm_letter] -= 1;
-  }
-
-  return rdm_letter;
+// Function to calculate the score of a word
+function calculateScore(word) {
+  return word.length ** 2;
 }
 
-function newWord(player) {
-  console.clear();
-  const user_input = userInput(player);
-  if (user_input === "1") {
-    console.log("Make a word: ");
-    const wordInput = prompt();
-    const isValid = inputCheck(wordInput, player);
-    if (isValid) {
-      const split_word = wordInput.toUpperCase().split('');
-      player_grid[player].push(wordInput);
-      for (const letter of split_word) {
-        const index = player_letters[player].indexOf(letter);
-        player_letters[player].splice(index, 1);
-      }
-      return 1;
+// Function to determine if a player's turn has ended
+function hasTurnEnded() {
+  let answer;
+  do {
+    answer = readlineSync.question('Avez-vous terminé votre tour ?');
+  } while (answer !== "oui" && answer !== "non");
+  return answer === "oui";
+}
+
+// Function to choose an action for the player
+function selectAction(player, elapsedT = 0) {
+  let answer;
+  let startTime = Date.now();
+  let otherPlayer = players.filter(p => p !== player)[0];
+  do {
+    answer = readlineSync.question('1 : Placer un mot   2 : Modifier un mot   3 : Passer\n');
+    elapsedTime = (Date.now() + elapsedT) - startTime;
+  } while ((answer !== "1" || player.hand.length < 3) && (answer !== "2" || player.board.length < 1) && answer !== "3" && answer.toLowerCase() !== "jarnac");
+  if (answer === "1") {
+    return 1;
+  }
+  if (answer === "2") {
+    return 2;
+  }
+  if (answer === "3") {
+    return 3;
+  }
+  if ((answer.toLowerCase() === "jarnac") && !player.firstTurn && (elapsedTime) <= 3000 && otherPlayer.board.length > 0 && otherPlayer.hand.length > 0) {
+    return 4;
+  } else if ((answer.toLowerCase() === "jarnac") && !player.firstTurn && (elapsedTime) > 3000) {
+    console.log("Trop tard pour Jarnac !");
+    return selectAction(player, elapsedTime);
+  } else if ((answer.toLowerCase() === "jarnac") && player.firstTurn) {
+    console.log("Impossible de faire un coup de Jarnac au premier tour");
+    return selectAction(player);
+  }
+}
+
+// Function to perform a Jarnac move
+function executeJarnac(player) {
+  otherPlayer = players.filter(p => p !== player)[0];
+  modifyWord(otherPlayer, true, player);
+}
+
+// Function to execute an action based on player's choice
+function performAction(choice, player) {
+  if (choice === 1) {
+    showBoard(player);
+    displayLetters(player);
+    appendWord(player);
+    showBoard(player);
+    return 1
+  }
+  if (choice === 2) {
+    modifyWord(player);
+    showBoard(player);
+    return 2
+  }
+  if (choice === 3) {
+    console.log(player.name, "passe son tour");
+    recordLog(player, "passe son tour")
+    return 3
+  }
+  if (choice === 4) {
+    recordLog(player, "a fait un coup de Jarnac !");
+    executeJarnac(player);
+    return 4
+  }
+}
+
+let player1 = new Player("Joueur 1");
+let player2 = new Player("Joueur 2");
+let players = [player1, player2];
+
+let i = 0;
+let end_player_turn = false;
+drawSixRandomLetters(player1);
+drawSixRandomLetters(player2);
+let choice;
+
+// Main game function
+function startGame() {
+  while (i !== 1) {
+    console.log("Bienvenue au Jarnac");
+    for (const player of players) {
+      do {
+        let actionVal;
+        if (player.firstTurn && !player.firstAction) {
+          console.log("Au tour du " + player.name + " :");
+          displayLetters(player);
+          appendWord(player);
+          choice = selectAction(player);
+          actionVal = performAction(choice, player);
+          player.firstAction = true;
+        } else {
+          console.log("Au tour du " + player.name + " :");
+          if (!player.firstTurn) {
+            console.log("Vous avez 3 secondes pour faire un coup de Jarnac")
+          }
+          showBoard(player);
+          displayLetters(player);
+          choice = selectAction(player);
+          actionVal = performAction(choice, player);
+        }
+        if (actionVal === 3) {
+          player.firstTurn = false;
+          end_player_turn = true;
+        }
+      } while (!end_player_turn);
+      end_player_turn = false;
     }
-  } else if (user_input === "exit()") {
-    return -1;
-  }
-  return newWord(player);
-}
-
-function chooseWord(player) {
-  let user_input = "";
-  const index_array = player_grid[player].map((_, index) => (index + 1).toString());
-  while (!index_array.includes(user_input)) {
-    console.clear();
-    console.log("What word do you want to change ?\n");
-    player_grid[player].forEach((word, index) => {
-      console.log(`${index + 1}.  ${word}\n`);
-    });
-    console.log("Please choose a word by entering the corresponding number.\n");
-    user_input = prompt();
-  }
-  return parseInt(user_input) - 1;
-}
-
-function changeWord(player) {
-  const old_word_index = chooseWord(player);
-  const old_word = player_grid[player][old_word_index].toUpperCase().split('');
-  console.log(old_word);
-  console.log("\nPlease enter the new word to be added:\n");
-  const new_word = prompt();
-  const new_word_sliced = new_word.split('');
-  const player_array = player_letters[player].concat(old_word);
-  const word_check = inputCheck(new_word, player_array, player);
-  console.log(word_check);
-  if (!word_check) {
-    return word_check;
-  }
-  for (const letter of old_word) {
-    if (new_word_sliced.includes(letter.toLowerCase())) {
-      const index = new_word_sliced.indexOf(letter.toLowerCase());
-      new_word_sliced.splice(index, 1);
-    }
-  }
-  for (const letter of new_word_sliced) {
-    const index = player_letters[player].indexOf(letter.toUpperCase());
-    player_letters[player].splice(index, 1);
-  }
-  player_grid[player][old_word_index] = new_word;
-  return new_word;
-}
-
-function passTurn() {
-  i = (i + 1) % 2;
-}
-
-function firstTurn(player) {
-  console.clear();
-  console.log(`It's player ${player + 1}'s turn!\n`);
-  player_letters[player] = pick6Letters();
-  return menu(player);
-}
-
-function turn(player) {
-  while (true) {
-    console.log(`It's player ${player + 1}'s turn!\n`);
-    const new_letter = pickLetter();
-    player_letters[player].push(new_letter);
-    return menu(player);
   }
 }
 
-while (game_playing) {
-  if (!first_turn_played) {
-    firstTurn(i);
-    passTurn();
-    firstTurn(i);
-    passTurn();
-    first_turn_played = true;
-  } else {
-    turn(i);
-    passTurn();
-  }
-}
+resetLogFile(startGame);
